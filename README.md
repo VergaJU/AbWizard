@@ -3,7 +3,7 @@
 <!-- HEADER STYLE: MODERN -->
 <div align="left" style="position: relative; width: 100%; height: 100%; ">
 
-<img src="abwizard_icon.svg" width="256" style="position: absolute; top: 0; right: 0;" alt="Project Logo"/>
+<img src="abwizard_icon.png" width="256" style="position: absolute; top: 0; right: 0;" alt="Project Logo"/>
 
 # AbWizard
 
