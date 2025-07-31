@@ -5,7 +5,7 @@
 
 <img src="abwizard_icon.svg" width="256" style="position: absolute; top: 0; right: 0;" alt="Project Logo"/>
 
-# ABWIZARD
+# AbWizard
 
 <em>User-Friendly Antibody Panel Constructor<em>
 
