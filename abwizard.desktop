@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=AbWizard
+Comment=Antibody Panel Solver
+Exec=/path/to/your/project/run_abwizard.sh
+Icon=/path/to/your/project/abwizard_icon.png
+Terminal=false
+Type=Application
+Categories=Science;Biology;
