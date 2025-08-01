@@ -8,11 +8,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QTextCursor 
 from PySide6.QtCore import Qt, QObject, Signal
 
-# Import your backend logic
 from wizard import Wizard
 
 # ------------------------------------------------------------------- #
-# CORRECT IMPLEMENTATION for redirecting print statements
+# Stream class for redirecting print statements
 # ------------------------------------------------------------------- #
 class Stream(QObject):
     """A QObject that captures text and emits it as a Qt signal."""
@@ -32,27 +31,36 @@ class Stream(QObject):
 # ------------------------------------------------------------------- #
 class MainWindow(QWidget):
     DEFAULT_INSTRUMENT_CONFIG = {
-        'lasers': "405, 488, 638",
-        'filters': [
-            [450, 45, 1], [525, 40, 2], [585, 42, 1], [610, 20, 2],
-            [660, 10, 2], [690, 50, 1], [712, 25, 1], [780, 60, 3],
-        ]
+        'lasers': {
+            405: {
+                '450/45': {'center': 450, 'width': 45},
+                '525/40': {'center': 525, 'width': 40},
+            },
+            488: {
+                '525/40': {'center': 525, 'width': 40},
+                '585/42': {'center': 585, 'width': 42},
+                '660/10': {'center': 660, 'width': 10},
+            },
+            638: {
+                '660/10': {'center': 660, 'width': 10},
+                '780/60': {'center': 780, 'width': 60},
+            }
+        }
     }
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Antibody Panel Solver")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 900, 700)
 
         # In-memory data storage for the antibody panel
         self.panel_data = {}
+        self.instrument_data = {}
 
-        # --- Setup the GUI ---
         self.init_ui()
-
-        # --- Load default data and connect the logger AFTER UI is built ---
         self.load_default_instrument()
         self.connect_logger()
+
 
     def init_ui(self):
         """Creates and arranges all the widgets."""
@@ -86,48 +94,80 @@ class MainWindow(QWidget):
         self.log_output.insertPlainText(text)
 
     def load_default_instrument(self):
-        self.laser_input.setText(self.DEFAULT_INSTRUMENT_CONFIG['lasers'])
-        default_filters = self.DEFAULT_INSTRUMENT_CONFIG['filters']
-        self.filter_table.setRowCount(len(default_filters))
+        self.instrument_data = self.DEFAULT_INSTRUMENT_CONFIG.copy()
         
-        for row, filter_data in enumerate(default_filters):
-            for col, item in enumerate(filter_data):
-                self.filter_table.setItem(row, col, QTableWidgetItem(str(item)))
+        # Populate the laser list
+        self.laser_list_widget.clear()
+        for laser in self.instrument_data['lasers'].keys():
+            self.laser_list_widget.addItem(str(laser))
+
+        # Select the first laser to trigger the detector table update
+        if self.laser_list_widget.count() > 0:
+            self.laser_list_widget.setCurrentRow(0)
 
     def create_instrument_tab(self):
         tab = QWidget()
-        layout = QVBoxLayout(tab)
-        
-        layout.addWidget(QLabel("Enter available lasers, separated by commas:"))
+        # Main horizontal layout: [Lasers Pane | Detectors Pane]
+        main_layout = QHBoxLayout(tab)
+
+        # --- Left Pane: Lasers ---
+        laser_pane_layout = QVBoxLayout()
+        laser_pane_layout.addWidget(QLabel("Lasers"))
+        self.laser_list_widget = QListWidget()
+        self.laser_list_widget.currentItemChanged.connect(self.update_detector_table)
+        laser_pane_layout.addWidget(self.laser_list_widget)
+
+        laser_input_layout = QHBoxLayout()
         self.laser_input = QLineEdit()
-        layout.addWidget(self.laser_input)
+        self.laser_input.setPlaceholderText("e.g., 405")
+        add_laser_btn = QPushButton("Add")
+        remove_laser_btn = QPushButton("Remove")
+        laser_input_layout.addWidget(self.laser_input)
+        laser_input_layout.addWidget(add_laser_btn)
+        laser_input_layout.addWidget(remove_laser_btn)
+        laser_pane_layout.addLayout(laser_input_layout)
         
-        layout.addWidget(QLabel("Detector Channels (Filters):"))
-        self.filter_table = QTableWidget(0, 3)
-        self.filter_table.setHorizontalHeaderLabels(['Center (nm)', 'Width (nm)', 'Count'])
-        self.filter_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.filter_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        layout.addWidget(self.filter_table)
+        main_layout.addLayout(laser_pane_layout, 1) # 1/3 of the space
 
-        input_layout = QHBoxLayout()
-        self.f_center_input = QLineEdit()
-        self.f_width_input = QLineEdit()
-        self.f_count_input = QLineEdit("1")
-        add_btn = QPushButton("Add Filter")
-        remove_btn = QPushButton("Remove Selected")
+        # --- Right Pane: Detectors ---
+        detector_pane_layout = QVBoxLayout()
+        self.detector_header_label = QLabel("Detectors for Selected Laser")
+        detector_pane_layout.addWidget(self.detector_header_label)
+        
+        self.detector_table = QTableWidget(0, 3)
+        self.detector_table.setHorizontalHeaderLabels(['Name', 'Center (nm)', 'Width (nm)'])
+        self.detector_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.detector_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        detector_pane_layout.addWidget(self.detector_table)
 
-        input_layout.addWidget(QLabel("Center:"))
-        input_layout.addWidget(self.f_center_input)
-        input_layout.addWidget(QLabel("Width:"))
-        input_layout.addWidget(self.f_width_input)
-        input_layout.addWidget(QLabel("Count:"))
-        input_layout.addWidget(self.f_count_input)
-        input_layout.addWidget(add_btn)
-        input_layout.addWidget(remove_btn)
-        layout.addLayout(input_layout)
+        detector_input_layout = QGridLayout()
+        self.d_name_input = QLineEdit()
+        self.d_center_input = QLineEdit()
+        self.d_width_input = QLineEdit()
+        self.d_name_input.setPlaceholderText("e.g., 525/40")
+        self.d_center_input.setPlaceholderText("e.g., 525")
+        self.d_width_input.setPlaceholderText("e.g., 40")
+        add_detector_btn = QPushButton("Add Detector")
+        remove_detector_btn = QPushButton("Remove Selected")
 
-        add_btn.clicked.connect(self.add_filter)
-        remove_btn.clicked.connect(self.remove_filter)
+        detector_input_layout.addWidget(QLabel("Name:"), 0, 0)
+        detector_input_layout.addWidget(self.d_name_input, 0, 1)
+        detector_input_layout.addWidget(QLabel("Center:"), 1, 0)
+        detector_input_layout.addWidget(self.d_center_input, 1, 1)
+        detector_input_layout.addWidget(QLabel("Width:"), 2, 0)
+        detector_input_layout.addWidget(self.d_width_input, 2, 1)
+        detector_input_layout.addWidget(add_detector_btn, 0, 2, 2, 1)
+        detector_input_layout.addWidget(remove_detector_btn, 2, 2)
+        detector_pane_layout.addLayout(detector_input_layout)
+
+        main_layout.addLayout(detector_pane_layout, 2) # 2/3 of the space
+
+        # Connect signals to slots
+        add_laser_btn.clicked.connect(self.add_laser)
+        remove_laser_btn.clicked.connect(self.remove_laser)
+        add_detector_btn.clicked.connect(self.add_detector)
+        remove_detector_btn.clicked.connect(self.remove_detector)
+
         self.tabs.addTab(tab, "1. Instrument Setup")
 
     def create_panel_tab(self):
@@ -182,6 +222,92 @@ class MainWindow(QWidget):
         remove_ab_btn.clicked.connect(self.remove_antibody)
         
         self.tabs.addTab(tab, "2. Antibody Panel")
+
+    def add_laser(self):
+        try:
+            laser_val = int(self.laser_input.text().strip())
+            if 'lasers' not in self.instrument_data:
+                self.instrument_data['lasers'] = {}
+                
+            if laser_val in self.instrument_data['lasers']:
+                QMessageBox.warning(self, "Input Error", "This laser already exists.")
+                return
+
+            self.instrument_data['lasers'][laser_val] = {}
+            self.laser_list_widget.addItem(str(laser_val))
+            self.laser_input.clear()
+        except ValueError:
+            QMessageBox.critical(self, "Input Error", "Please enter a valid integer for the laser.")
+            
+    ### NEW: Slot to remove a laser
+    def remove_laser(self):
+        current_item = self.laser_list_widget.currentItem()
+        if not current_item:
+            QMessageBox.warning(self, "Selection Error", "Please select a laser to remove.")
+            return
+            
+        laser_val = int(current_item.text())
+        del self.instrument_data['lasers'][laser_val]
+        self.laser_list_widget.takeItem(self.laser_list_widget.row(current_item))
+        # The currentItemChanged signal will fire, auto-updating the detector table
+        
+    ### NEW: Slot that updates the detector table when a new laser is selected
+    def update_detector_table(self, current_item, previous_item):
+        self.detector_table.setRowCount(0) # Clear the table
+        
+        if not current_item:
+            self.detector_header_label.setText("Detectors for Selected Laser")
+            return
+
+        laser_val = int(current_item.text())
+        self.detector_header_label.setText(f"Detectors for Laser {laser_val} nm")
+        
+        detectors = self.instrument_data['lasers'].get(laser_val, {})
+        for name, props in detectors.items():
+            row_pos = self.detector_table.rowCount()
+            self.detector_table.insertRow(row_pos)
+            self.detector_table.setItem(row_pos, 0, QTableWidgetItem(name))
+            self.detector_table.setItem(row_pos, 1, QTableWidgetItem(str(props['center'])))
+            self.detector_table.setItem(row_pos, 2, QTableWidgetItem(str(props['width'])))
+
+
+    def add_detector(self):
+        current_laser_item = self.laser_list_widget.currentItem()
+        if not current_laser_item:
+            QMessageBox.warning(self, "Input Error", "Please select a laser first.")
+            return
+        
+        laser_val = int(current_laser_item.text())
+        
+        try:
+            name = self.d_name_input.text().strip()
+            center = int(self.d_center_input.text())
+            width = int(self.d_width_input.text())
+            if not name:
+                raise ValueError("Detector name cannot be empty.")
+            
+            self.instrument_data['lasers'][laser_val][name] = {'center': center, 'width': width}
+            self.update_detector_table(current_laser_item, None) # Refresh table view
+            
+            self.d_name_input.clear()
+            self.d_center_input.clear()
+            self.d_width_input.clear()
+        except ValueError as e:
+            QMessageBox.critical(self, "Input Error", f"Please enter valid detector data.\n({e})")
+            
+    def remove_detector(self):
+        current_laser_item = self.laser_list_widget.currentItem()
+        selected_detector_row = self.detector_table.currentRow()
+        
+        if not current_laser_item or selected_detector_row < 0:
+            QMessageBox.warning(self, "Selection Error", "Please select a laser and a detector to remove.")
+            return
+
+        laser_val = int(current_laser_item.text())
+        detector_name = self.detector_table.item(selected_detector_row, 0).text()
+        
+        del self.instrument_data['lasers'][laser_val][detector_name]
+        self.update_detector_table(current_laser_item, None) # Refresh table view
 
     def add_filter(self):
         try:
@@ -288,38 +414,28 @@ class MainWindow(QWidget):
         QApplication.processEvents()
 
         try:
-            # 1. Assemble data from GUI
-            lasers_text = self.laser_input.text()
-            if not lasers_text: raise ValueError("Lasers cannot be empty.")
-            lasers = [int(l.strip()) for l in lasers_text.split(',')]
-
-            instrument_config = {'lasers': lasers, 'filters': {}}
-            if self.filter_table.rowCount() == 0:
-                raise ValueError("At least one filter must be defined.")
-            for row in range(self.filter_table.rowCount()):
-                center = int(self.filter_table.item(row, 0).text())
-                width = int(self.filter_table.item(row, 1).text())
-                count = int(self.filter_table.item(row, 2).text())
-                instrument_config['filters'][f"{center}/{width}"] = {'center': center, 'width': width, 'count': count}
-
-            # *** THIS IS THE FIX FOR THE FIRST ERROR ***
-            # Ensure the panel data isn't empty AND that at least one marker has antibodies.
+            # 1. Assemble data from GUI (now much simpler)
+            # Basic validation
+            if not self.instrument_data.get('lasers'):
+                raise ValueError("Please define at least one laser.")
+            if not any(self.instrument_data['lasers'].values()):
+                raise ValueError("Please add at least one detector to one of the lasers.")
             if not self.panel_data or all(not v for v in self.panel_data.values()):
                 raise ValueError("Please add at least one marker with one antibody.")
 
             # 2. Instantiate Wizard and run
             print("Data assembled. Starting analysis...\n")
-            wizard = Wizard(self.panel_data, instrument_config)
+            # The instrument data is already in the correct format
+            wizard = Wizard(self.panel_data, self.instrument_data)
             wizard.run()
 
         except Exception as e:
             error_message = f"ERROR: {e}"
-            print(error_message) # This now works correctly
+            print(error_message)
             QMessageBox.critical(self, "Analysis Error", str(e))
 
         finally:
             self.run_button.setEnabled(True)
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
