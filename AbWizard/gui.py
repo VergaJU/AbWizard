@@ -39,10 +39,13 @@ class MainWindow(QWidget):
             488: {
                 '525/40': {'center': 525, 'width': 40},
                 '585/42': {'center': 585, 'width': 42},
-                '660/10': {'center': 660, 'width': 10},
+                '610/20': {'center': 610, 'width': 20},
+                '690/50': {'center': 690, 'width': 50},
+                '780/60': {'center': 780, 'width': 60},
             },
             638: {
                 '660/10': {'center': 660, 'width': 10},
+                '712/25': {'center': 712, 'width': 25},
                 '780/60': {'center': 780, 'width': 60},
             }
         }
